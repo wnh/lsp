@@ -40,19 +40,11 @@ typedef struct token {
 	size_t     Len;
 } token;
 
-typedef struct lexer {
+typedef struct parser {
 	const char *Data;
 	size_t      DataLen;
 	size_t      Pos;
-	token_type  TokenType;
-	size_t      TokenStart;
-	size_t      TokenLen;
-} lexer;
-
-
-typedef struct parser {
-	lexer   Lex;
-	token   CurToken;
+	token   Token;
 } parser;
 
 
@@ -75,16 +67,16 @@ char *HumanTokenNames[]= {
                   DEFS
  *************************************/
 /* Lexer */
-void SkipWhitespace(lexer *Lex);
-token_type LexSymbol(lexer *Lex);
-token_type LexNumber(lexer *Lex);
+token_type LexNextToken(parser *P);
+token_type LexSymbol(parser *P);
+token_type LexNumber(parser *P);
+void SkipWhitespace(parser *P);
 bool IsSymbolStart(char C);
 bool IsSymbol(char C);
 bool IsAlpha(char C);
 bool IsNumber(char C);
 bool ContainsChar(char C, char *Set);
 token *AllocToken(parser *P);
-token_type LexNextToken(lexer *Lex);
 
 /* Parser */
 token *PeekToken(parser *Parser);
@@ -113,33 +105,33 @@ void _TestLexer();
 /**************************************
                 IMPL
  *************************************/
-token_type LexNextToken(lexer *Lex)
+token_type LexNextToken(parser *P)
 {
-#define NEXTC Lex->Data[Lex->Pos]
+#define NEXTC P->Data[P->Pos]
 	for (;;) {
-		SkipWhitespace(Lex);
-		if (Lex->Pos == Lex->DataLen) {
-			Lex->TokenType = TOKEN_EOF;
+		SkipWhitespace(P);
+		if (P->Pos == P->DataLen) {
+			P->Token.Type = TOKEN_EOF;
 			return TOKEN_EOF;
 		}
 		if(NEXTC == '(') {
 			token_type T = TOKEN_LPAREN;
-			Lex->TokenType = T;
-			Lex->TokenStart = Lex->Pos;
-			Lex->TokenLen   = 1;
-			Lex->Pos++;
+			P->Token.Type = T;
+			P->Token.Start = P->Pos;
+			P->Token.Len   = 1;
+			P->Pos++;
 			return T;
 		} else if(NEXTC == ')') {
 			token_type T = TOKEN_RPAREN;
-			Lex->TokenType = T;
-			Lex->TokenStart = Lex->Pos;
-			Lex->TokenLen   = 1;
-			Lex->Pos++;
+			P->Token.Type = T;
+			P->Token.Start = P->Pos;
+			P->Token.Len   = 1;
+			P->Pos++;
 			return T;
 		} else if(IsSymbolStart(NEXTC)) {
-			return LexSymbol(Lex);
+			return LexSymbol(P);
 		} else if(IsNumber(NEXTC)) {
-			return LexNumber(Lex);
+			return LexNumber(P);
 		} else {
 			printf("Unknown token: '%c' (0x%0hhx)\n", NEXTC, NEXTC);
 			exit(1);
@@ -148,30 +140,30 @@ token_type LexNextToken(lexer *Lex)
 #undef NEXTC
 }
 
-token_type LexSymbol(lexer *Lex)
+token_type LexSymbol(parser *P)
 {
-	Lex->TokenType = TOKEN_SYMBOL;
-	Lex->TokenStart = Lex->Pos;
-	Lex->TokenLen   = 0;
-	while(IsSymbol(Lex->Data[Lex->Pos]))
+	P->Token.Type = TOKEN_SYMBOL;
+	P->Token.Start = P->Pos;
+	P->Token.Len   = 0;
+	while(IsSymbol(P->Data[P->Pos]))
 	{
-		Lex->Pos++;
-		Lex->TokenLen++;
+		P->Pos++;
+		P->Token.Len++;
 	}
-	return Lex->TokenType;
+	return P->Token.Type;
 }
 
-token_type LexNumber(lexer *Lex)
+token_type LexNumber(parser *P)
 {
-	Lex->TokenType = TOKEN_INT;
-	Lex->TokenStart = Lex->Pos;
-	Lex->TokenLen   = 0;
-	while(IsNumber(Lex->Data[Lex->Pos]))
+	P->Token.Type = TOKEN_INT;
+	P->Token.Start = P->Pos;
+	P->Token.Len   = 0;
+	while(IsNumber(P->Data[P->Pos]))
 	{
-		Lex->Pos++;
-		Lex->TokenLen++;
+		P->Pos++;
+		P->Token.Len++;
 	}
-	return Lex->TokenType;
+	return P->Token.Type;
 }
 
 bool IsSymbolStart(char C) { return (IsAlpha(C) || ContainsChar(C, "!@#$%^&*-+")); }
@@ -188,23 +180,23 @@ bool ContainsChar(char C, char *Set)
 	return 0;
 }
 
-void SkipWhitespace(lexer *Lex)
+void SkipWhitespace(parser *P)
 {
-	while(ContainsChar(Lex->Data[Lex->Pos], " \t\n\r"))
+	while(ContainsChar(P->Data[P->Pos], " \t\n\r"))
 	{
-		Lex->Pos++;
+		P->Pos++;
 	}
 }
 
 sexp *ParseBuffer(const char* Buf)
 {
 	parser Parser = {};
-	Parser.Lex.Data = Buf;
-	Parser.Lex.DataLen = strlen(Parser.Lex.Data);
-	Parser.Lex.Pos = 0;
-	Parser.CurToken.Type  = 0;
-	Parser.CurToken.Start = 0;
-	Parser.CurToken.Len   = 0;
+	Parser.Data = Buf;
+	Parser.DataLen = strlen(Parser.Data);
+	Parser.Pos = 0;
+	Parser.Token.Type  = 0;
+	Parser.Token.Start = 0;
+	Parser.Token.Len   = 0;
 	EatToken(&Parser);
 
 	for(;;)
@@ -234,9 +226,9 @@ sexp *ParseExpr(parser *P)
 		{
 			Ret = NewSexp(SYMBOL);
 			Ret->Symbol = SliceString(
-				P->Lex.Data,
-				P->CurToken.Start,
-				P->CurToken.Len
+				P->Data,
+				P->Token.Start,
+				P->Token.Len
 			);
 			EatToken(P);
 			break;
@@ -245,9 +237,9 @@ sexp *ParseExpr(parser *P)
 		{
 			Ret = NewSexp(INT);
 			char *IntStr = SliceString(
-				P->Lex.Data,
-				P->CurToken.Start,
-				P->CurToken.Len
+				P->Data,
+				P->Token.Start,
+				P->Token.Len
 			);
 			Ret->Int = atoi(IntStr);
 			free(IntStr);
@@ -294,21 +286,16 @@ sexp *ParseList(parser *P)
 
 token *PeekToken(parser *Parser)
 {
-	return &Parser->CurToken;
+	return &Parser->Token;
 }
 void EatToken(parser *Parser)
 {
-	token_type Tp = LexNextToken(&Parser->Lex);
-	//TODO copy into Parser->CurToken
-	Parser->CurToken.Type  = Tp;
-	Parser->CurToken.Start = Tp;
-	Parser->CurToken.Start = Parser->Lex.TokenStart;
-	Parser->CurToken.Len   = Parser->Lex.TokenLen;
+	token_type Tp = LexNextToken(Parser);
 }
 
 void ExpectToken(parser *Parser, token_type Type)
 {
-	if(Parser->CurToken.Type != Type) {
+	if(Parser->Token.Type != Type) {
 		printf("Parse Error: expeced %s;", HumanTokenNames[Type]);
 		exit(1);
 	}
@@ -404,16 +391,16 @@ void *xrealloc(void* ptr, size_t size)
 /* TEST */
 void _TestLexer()
 {
-	lexer Lex;
-#define InitLex(Str) Lex.Data = (Str); \
-	Lex.DataLen = strlen(Str);\
-	Lex.Pos = 0; \
-	Lex.TokenType = 0; \
-	Lex.TokenStart = 0; \
-	Lex.TokenLen = 0;
+	parser P;
+#define InitLex(Str) P.Data = (Str); \
+	P.DataLen = strlen(Str);\
+	P.Pos = 0; \
+	P.Token.Type = 0; \
+	P.Token.Start = 0; \
+	P.Token.Len = 0;
 
-#define AssertInt() LexNextToken(&Lex); assert(Lex.TokenType == TOKEN_INT);
-#define AssertType(t) LexNextToken(&Lex); assert(Lex.TokenType == (t));
+#define AssertInt() LexNextToken(&P); assert(P.Token.Type == TOKEN_INT);
+#define AssertType(t) LexNextToken(&P); assert(P.Token.Type == (t));
 
 	InitLex("123");
 	AssertInt();
