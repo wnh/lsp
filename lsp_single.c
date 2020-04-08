@@ -21,7 +21,7 @@ struct sexp {
 		struct {
 			sexp *Car;
 			sexp *Cdr;
-		} Pair;
+		};
 	};
 };
 
@@ -44,6 +44,7 @@ typedef struct lexer {
 	const char *Data;
 	size_t      DataLen;
 	size_t      Pos;
+	token_type  TokenType;
 	size_t      TokenStart;
 	size_t      TokenLen;
 } lexer;
@@ -106,6 +107,8 @@ void *xrealloc(void*, size_t);
  *************************************/
 
 const char *TestProgs[];
+void _RunTests();
+void _TestLexer();
 
 /**************************************
                 IMPL
@@ -114,19 +117,21 @@ token_type LexNextToken(lexer *Lex)
 {
 #define NEXTC Lex->Data[Lex->Pos]
 	for (;;) {
-		printf("LexNextToken(pos=%ld, len=%ld)\n", Lex->Pos, Lex->DataLen);
 		SkipWhitespace(Lex);
 		if (Lex->Pos == Lex->DataLen) {
+			Lex->TokenType = TOKEN_EOF;
 			return TOKEN_EOF;
 		}
 		if(NEXTC == '(') {
 			token_type T = TOKEN_LPAREN;
+			Lex->TokenType = T;
 			Lex->TokenStart = Lex->Pos;
 			Lex->TokenLen   = 1;
 			Lex->Pos++;
 			return T;
 		} else if(NEXTC == ')') {
 			token_type T = TOKEN_RPAREN;
+			Lex->TokenType = T;
 			Lex->TokenStart = Lex->Pos;
 			Lex->TokenLen   = 1;
 			Lex->Pos++;
@@ -145,6 +150,7 @@ token_type LexNextToken(lexer *Lex)
 
 token_type LexSymbol(lexer *Lex)
 {
+	Lex->TokenType = TOKEN_SYMBOL;
 	Lex->TokenStart = Lex->Pos;
 	Lex->TokenLen   = 0;
 	while(IsSymbol(Lex->Data[Lex->Pos]))
@@ -152,11 +158,12 @@ token_type LexSymbol(lexer *Lex)
 		Lex->Pos++;
 		Lex->TokenLen++;
 	}
-	return TOKEN_SYMBOL;
+	return Lex->TokenType;
 }
 
 token_type LexNumber(lexer *Lex)
 {
+	Lex->TokenType = TOKEN_INT;
 	Lex->TokenStart = Lex->Pos;
 	Lex->TokenLen   = 0;
 	while(IsNumber(Lex->Data[Lex->Pos]))
@@ -164,7 +171,7 @@ token_type LexNumber(lexer *Lex)
 		Lex->Pos++;
 		Lex->TokenLen++;
 	}
-	return TOKEN_INT;
+	return Lex->TokenType;
 }
 
 bool IsSymbolStart(char C) { return (IsAlpha(C) || ContainsChar(C, "!@#$%^&*-+")); }
@@ -267,23 +274,18 @@ sexp *ParseList(parser *P)
 
 		sexp *Sx = NewSexp(PAIR);
 		sexp *Data = ParseExpr(P);
-		Sx->Pair.Car = Data;
-		Sx->Pair.Cdr = Nil;
+		if(!Data) {
+			printf("ParseError: unable to parse expression\n");
+			return NULL;
+		}
+		Sx->Car = Data;
+		Sx->Cdr = Nil;
 		if (Head == Nil) {
 			Head = Tail = Sx;
 		} else {
-			Tail->Pair.Cdr = Sx;
+			Tail->Cdr = Sx;
 			Tail = Sx;
 		}
-		//	Head = NewSexp(PAIR);
-		//	Head->Pair.Cdr = Nil;
-		//	Tail = Head;
-		//}
-		//Sx->Pair.Car = TmpCar;
-		//sexp *TmpCar = ParseExpr(P);
-		//Tail->Pair.Cdr = Sx;
-		//Tail = Sx;
-		//EatToken(P);
 	}
 	ExpectToken(P, TOKEN_RPAREN);
 	return Head;
@@ -315,6 +317,16 @@ void ExpectToken(parser *Parser, token_type Type)
 
 int main(int argc, char **argv)
 {
+	_RunTests();
+	return 0;
+
+}
+
+
+void _RunTests()
+{
+	_TestLexer();
+
 	for(int i=0; TestProgs[i] != 0; i++)
 	{
 		printf("Parsing: %s\n", TestProgs[i]);
@@ -358,9 +370,9 @@ void PrintSexp(sexp *Exp)
 		sexp *E = Exp;
 		for (;;){
 			if(E == Nil) break;
-			PrintSexp(E->Pair.Car);
+			PrintSexp(E->Car);
 			printf(" ");
-			E = E->Pair.Cdr;
+			E = E->Cdr;
 		}
 		printf(")");
 	} break;
@@ -389,11 +401,56 @@ void *xrealloc(void* ptr, size_t size)
 	return ret;
 }
 
-/* TEST DATA */
+/* TEST */
+void _TestLexer()
+{
+	lexer Lex;
+#define InitLex(Str) Lex.Data = (Str); \
+	Lex.DataLen = strlen(Str);\
+	Lex.Pos = 0; \
+	Lex.TokenType = 0; \
+	Lex.TokenStart = 0; \
+	Lex.TokenLen = 0;
+
+#define AssertInt() LexNextToken(&Lex); assert(Lex.TokenType == TOKEN_INT);
+#define AssertType(t) LexNextToken(&Lex); assert(Lex.TokenType == (t));
+
+	InitLex("123");
+	AssertInt();
+	AssertType(TOKEN_EOF);
+
+	InitLex("not-a-real-thing")
+	AssertType(TOKEN_SYMBOL);
+	AssertType(TOKEN_EOF);
+
+	InitLex("*global*")
+	AssertType(TOKEN_SYMBOL);
+	AssertType(TOKEN_EOF);
+
+	InitLex("+")
+	AssertType(TOKEN_SYMBOL);
+	AssertType(TOKEN_EOF);
+
+	InitLex("+123")
+	AssertType(TOKEN_SYMBOL);
+	AssertType(TOKEN_EOF);
+
+	InitLex("((()");
+	AssertType(TOKEN_LPAREN);
+	AssertType(TOKEN_LPAREN);
+	AssertType(TOKEN_LPAREN);
+	AssertType(TOKEN_RPAREN);
+	AssertType(TOKEN_EOF);
+
+#undef init
+#undef AssertInt
+#undef AssertType
+}
 const char *TestProgs[] = {
 	" (+ 1 2)",
 	"((1) (2))",
 	"(define (square-plus-n x) (+ (* x x) 123))",
 	"()",
+	"(define (x ",
 	0
 };
