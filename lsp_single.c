@@ -91,6 +91,10 @@ token *PeekToken(parser *);
 
 void PrintSexp(sexp *Exp);
 
+
+/* Evaluation */
+sexp *ListLen(sexp *List);
+
 /* Util */
 void *xmalloc(size_t);
 void *xrealloc(void*, size_t);
@@ -101,6 +105,7 @@ void *xrealloc(void*, size_t);
 const char *TestProgs[];
 void _RunTests();
 void _TestLexer();
+void _TestParser();
 
 /**************************************
                 IMPL
@@ -313,6 +318,7 @@ int main(int argc, char **argv)
 void _RunTests()
 {
 	_TestLexer();
+	_TestParser();
 
 	for(int i=0; TestProgs[i] != 0; i++)
 	{
@@ -339,6 +345,29 @@ char *SliceString(const char* Buffer, size_t Start, size_t Len)
 	Str[Len] = 0;
 	return Str;
 }
+
+
+
+sexp *ListLen(sexp *List)
+{
+	assert(List);
+	sexp *Ret = NewSexp(INT);
+	if (List == Nil) {
+		Ret->Int = 0;
+		return Ret;
+	}
+	int len = 1;
+	while(List->Cdr != Nil) {
+		assert(List->Type == PAIR);
+		List = List->Cdr;
+		len++;
+	}
+
+	Ret->Int = len;
+	return Ret;
+	
+}
+
 
 void PrintSexp(sexp *Exp)
 {
@@ -389,50 +418,80 @@ void *xrealloc(void* ptr, size_t size)
 }
 
 /* TEST */
-void _TestLexer()
-{
-	parser P;
-#define InitLex(Str) P.Data = (Str); \
+#define InitParser(Str) P.Data = (Str); \
 	P.DataLen = strlen(Str);\
 	P.Pos = 0; \
 	P.Token.Type = 0; \
 	P.Token.Start = 0; \
 	P.Token.Len = 0;
 
-#define AssertInt() LexNextToken(&P); assert(P.Token.Type == TOKEN_INT);
-#define AssertType(t) LexNextToken(&P); assert(P.Token.Type == (t));
+#define AssertTokenInt() LexNextToken(&P); assert(P.Token.Type == TOKEN_INT);
+#define AssertTokenType(t) LexNextToken(&P); assert(P.Token.Type == (t));
 
-	InitLex("123");
-	AssertInt();
-	AssertType(TOKEN_EOF);
 
-	InitLex("not-a-real-thing")
-	AssertType(TOKEN_SYMBOL);
-	AssertType(TOKEN_EOF);
+void _TestLexer()
+{
+	parser P;
 
-	InitLex("*global*")
-	AssertType(TOKEN_SYMBOL);
-	AssertType(TOKEN_EOF);
+	InitParser("123");
+	AssertTokenInt();
+	AssertTokenType(TOKEN_EOF);
 
-	InitLex("+")
-	AssertType(TOKEN_SYMBOL);
-	AssertType(TOKEN_EOF);
+	InitParser("not-a-real-thing")
+	AssertTokenType(TOKEN_SYMBOL);
+	AssertTokenType(TOKEN_EOF);
 
-	InitLex("+123")
-	AssertType(TOKEN_SYMBOL);
-	AssertType(TOKEN_EOF);
+	InitParser("*global*")
+	AssertTokenType(TOKEN_SYMBOL);
+	AssertTokenType(TOKEN_EOF);
 
-	InitLex("((()");
-	AssertType(TOKEN_LPAREN);
-	AssertType(TOKEN_LPAREN);
-	AssertType(TOKEN_LPAREN);
-	AssertType(TOKEN_RPAREN);
-	AssertType(TOKEN_EOF);
+	InitParser("+")
+	AssertTokenType(TOKEN_SYMBOL);
+	AssertTokenType(TOKEN_EOF);
 
-#undef init
-#undef AssertInt
-#undef AssertType
+	InitParser("+123")
+	AssertTokenType(TOKEN_SYMBOL);
+	AssertTokenType(TOKEN_EOF);
+
+	InitParser("((()");
+	AssertTokenType(TOKEN_LPAREN);
+	AssertTokenType(TOKEN_LPAREN);
+	AssertTokenType(TOKEN_LPAREN);
+	AssertTokenType(TOKEN_RPAREN);
+	AssertTokenType(TOKEN_EOF);
+
 }
+
+#undef AssertTokenInt
+#undef AssertTokenType
+
+void _TestParser()
+{
+#define TestParse(s) InitParser(s); Ret = 0; LexNextToken(&P); Exp = ParseExpr(&P); assert(Exp);
+
+	parser P;
+	sexp *Exp;
+	sexp *Ret;
+
+	TestParse("(+ 1 2)");
+	Ret = ListLen(Exp);
+	assert(Ret->Int == 3);
+
+	TestParse("(define (square x)  (* x x))");
+	Ret = ListLen(Exp);
+	assert(Ret->Int == 3);
+	assert(Exp->Car->Type == SYMBOL);
+	assert(strcmp(Exp->Car->Symbol, "define") == 0);
+
+	TestParse("()");
+	Ret = ListLen(Exp);
+	assert(Ret->Int == 0);
+	assert(Exp == Nil);
+
+#undef TestParse
+}
+#undef InitParser
+
 const char *TestProgs[] = {
 	" (+ 1 2)",
 	"((1) (2))",
